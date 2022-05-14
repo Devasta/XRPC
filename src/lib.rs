@@ -59,32 +59,59 @@ impl Parser {
         }
     }
 
-    fn map<P, F, A, B>(parser: P, map_fn: F)
-            -> impl Fn(&str) -> Result<(usize, B), usize>
-        where
-            P: Fn(&str) -> Result<(usize, A), usize>,
-            F: Fn(A) -> B,
+    fn tuple3<P1, P2, P3, R1, R2, R3>(&self, parser1: P1, parser2: P2, parser3: P3)
+        -> impl Fn(usize) -> Result<(usize, (R1, R2, R3)), usize>
+    where
+        P1: Fn(usize) -> Result<(usize, R1), usize>,
+        P2: Fn(usize) -> Result<(usize, R2), usize>,
+        P3: Fn(usize) -> Result<(usize, R3), usize>
     {
-        move |input|
-            parser(input)
-                .map(|(next_input, result)| (next_input, map_fn(result)))
-    }
-
-    /*
-    impl<Input: Clone, A, B, Error: ParseError<Input>,FnA: Parser<Input, A, Error>, FnB: Parser<Input, B, Error>> Tuple<Input, (A, B), Error> for (FnA, FnB) {
-    fn parse(&mut self, input: Input) -> IResult<Input, (A, B), Error> {
-        {
-            let (i, o) = self.0.parse(input.clone())?;
-
-            {
-                let (i, o) = self.1.parse(i.clone())?;
-
-                Ok((i, (o, o)))
-            }
+        move |index| match parser1(index) {
+            Ok((index1, result1))
+            => match parser2(index1) {
+                Ok((index2, result2))
+                    => match parser3(index2){
+                    Ok((index3, result3))=> Ok((index3, (result1, result2, result3))),
+                    Err(err) => Err(err)
+                },
+                Err(err) => Err(err),
+            },
+            Err(err) => Err(err),
         }
     }
-}
-     */
+
+    fn many0<P, RV>(&self, parser: P)
+        -> impl Fn(usize) ->Result<(usize, Vec<RV>), usize>
+        where
+            P: Fn(usize) -> Result<(usize, RV), usize>,
+    {
+        move |mut index| {
+            let mut result = Vec::new();
+
+            while let Ok((next_index, next_item)) = parser(index) {
+                index = next_index;
+                result.push(next_item);
+            }
+
+            Ok((index, result))
+        }
+    }
+
+    fn map<P, F, A, B>(parser: P, map_fn: F)
+        -> impl Fn(usize) -> Result<(usize, B), usize>
+        where
+            P: Fn(usize) -> Result<(usize, A), usize>,
+            F: Fn(A) -> B,
+    {
+        move |index| match parser(index) {
+            Ok((next_index, result)) => Ok((next_index, map_fn(result))),
+            Err(err) => Err(err),
+        }
+    }
+
+    fn take_until(){
+
+    }
 
     /*
 impl<
@@ -152,5 +179,36 @@ mod tests {
             parse_doc(0)
         );
     }
+
+    #[test]
+    fn parser_tuple3_test1() {
+        let testdoc = Parser{
+            document: "<doc>".to_string()
+        };
+        let parse_doc = testdoc.tuple3(
+            testdoc.tag("<"),
+            testdoc.tag("doc"),
+            testdoc.tag(">")
+        );
+        assert_eq!(
+            Ok((5,((),(),()))),
+            parse_doc(0)
+        );
+    }
+
+    #[test]
+    fn parser_many0_test1() {
+        let testdoc = Parser{
+            document: "<<<<>".to_string()
+        };
+        let parse_doc = testdoc.many0(
+            testdoc.tag("<")
+        );
+        assert_eq!(
+            Ok((4,vec![(),(),(),()])),
+            parse_doc(0)
+        );
+    }
+
 }
 
