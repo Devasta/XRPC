@@ -1,4 +1,5 @@
 
+type ParseResult<Output> = Result<(usize, Output), usize>;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct Element {
@@ -9,14 +10,14 @@ struct Element {
 
 /*
 
-alt
+alt -- DONE sort of
 char
 delimited
-many0
+many0 -- DONE
 many1
-map
+map -- DONE
 none_of
-opt
+opt -- DONE
 tag -- DONE
 take_while_m_n
 tuple
@@ -33,7 +34,7 @@ struct Parser {
 impl Parser {
 
     fn tag<'a>(&self, expected: &'static str)
-               -> impl Fn(usize) -> Result<(usize, ()), usize> + '_
+       -> impl Fn(usize) -> ParseResult<()> + '_
     {
         move |index| match self.document.get(index..index+expected.len()) {
             Some(next) if next == expected => {
@@ -44,10 +45,10 @@ impl Parser {
     }
 
     fn pair<P1, P2, R1, R2>(&self, parser1: P1, parser2: P2)
-            -> impl Fn(usize) -> Result<(usize, (R1, R2)), usize>
+        -> impl Fn(usize) -> ParseResult<(R1, R2)>
         where
-            P1: Fn(usize) -> Result<(usize, R1), usize>,
-            P2: Fn(usize) -> Result<(usize, R2), usize>,
+            P1: Fn(usize) -> ParseResult<R1>,
+            P2: Fn(usize) -> ParseResult<R2>
     {
         move |index| match parser1(index) {
             Ok((next_index, result1))
@@ -60,11 +61,11 @@ impl Parser {
     }
 
     fn tuple3<P1, P2, P3, R1, R2, R3>(&self, parser1: P1, parser2: P2, parser3: P3)
-        -> impl Fn(usize) -> Result<(usize, (R1, R2, R3)), usize>
+        -> impl Fn(usize) -> ParseResult<(R1, R2, R3)>
     where
-        P1: Fn(usize) -> Result<(usize, R1), usize>,
-        P2: Fn(usize) -> Result<(usize, R2), usize>,
-        P3: Fn(usize) -> Result<(usize, R3), usize>
+        P1: Fn(usize) -> ParseResult<R1>,
+        P2: Fn(usize) -> ParseResult<R2>,
+        P3: Fn(usize) -> ParseResult<R3>,
     {
         move |index| match parser1(index) {
             Ok((index1, result1))
@@ -80,10 +81,10 @@ impl Parser {
         }
     }
 
-    fn many0<P, RV>(&self, parser: P)
-        -> impl Fn(usize) ->Result<(usize, Vec<RV>), usize>
+    fn many0<P, R>(&self, parser: P)
+        -> impl Fn(usize) -> ParseResult<Vec<R>>
         where
-            P: Fn(usize) -> Result<(usize, RV), usize>,
+            P: Fn(usize) -> ParseResult<R>
     {
         move |mut index| {
             let mut result = Vec::new();
@@ -97,10 +98,10 @@ impl Parser {
         }
     }
 
-    fn map<P, F, A, B>(parser: P, map_fn: F)
-        -> impl Fn(usize) -> Result<(usize, B), usize>
+    fn map<P, F, A, B>(&self, parser: P, map_fn: F)
+        -> impl Fn(usize) -> ParseResult<B>
         where
-            P: Fn(usize) -> Result<(usize, A), usize>,
+            P: Fn(usize) -> ParseResult<A>,
             F: Fn(A) -> B,
     {
         move |index| match parser(index) {
@@ -109,9 +110,54 @@ impl Parser {
         }
     }
 
-    fn take_until(){
 
+    fn alt2<P1, P2, A>(&self, parser1: P1, parser2: P2)
+        -> impl Fn(usize) -> ParseResult<A>
+        where
+            P1: Fn(usize) -> ParseResult<A>,
+            P2: Fn(usize) -> ParseResult<A>,
+    {
+        move |index| match parser1(index) {
+            Ok((index1, result1)) => Ok((index1, result1)),
+            Err(err) => match parser2(index){
+                Ok((index2, result2)) => Ok((index2, result2)),
+                Err(err) => Err(err)
+            }
+        }
     }
+
+    fn opt<P1, R1>(&self, parser1: P1)
+        -> impl Fn(usize) -> ParseResult<Option<R1>>
+        where
+            P1: Fn(usize) -> ParseResult<R1>
+    {
+        move |index| match parser1(index){
+            Ok((index1, result1)) => Ok((index1, Some(result1))),
+            Err(err) => Ok((index, None))
+        }
+    }
+
+    fn delimited<P1, P2, P3, R1, R2, R3>(&self, parser1: P1, parser2: P2, parser3: P3)
+        -> impl Fn(usize) -> ParseResult<(R2)>
+        where
+            P1: Fn(usize) -> ParseResult<R1>,
+            P2: Fn(usize) -> ParseResult<R2>,
+            P3: Fn(usize) -> ParseResult<R3>,
+    {
+        move |index| match parser1(index) {
+            Ok((index1, result1))
+            => match parser2(index1) {
+                Ok((index2, result2))
+                => match parser3(index2){
+                    Ok((index3, result3))=> Ok((index3, (result2))),
+                    Err(err) => Err(err)
+                },
+                Err(err) => Err(err),
+            },
+            Err(err) => Err(err),
+        }
+    }
+
 
     /*
 impl<
@@ -197,6 +243,22 @@ mod tests {
     }
 
     #[test]
+    fn parser_tuple3_test2() {
+        let testdoc = Parser{
+            document: "<doc>".to_string()
+        };
+        let parse_doc = testdoc.tuple3(
+            testdoc.tag("<"),
+            testdoc.tag("doc"),
+            testdoc.tag("<")
+        );
+        assert_eq!(
+            Err(4),
+            parse_doc(0)
+        );
+    }
+
+    #[test]
     fn parser_many0_test1() {
         let testdoc = Parser{
             document: "<<<<>".to_string()
@@ -210,5 +272,71 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parser_alt2_test1() {
+        let testdoc = Parser{
+            document: "<<>".to_string()
+        };
+        let parse_doc = testdoc.alt2(
+            testdoc.tag(">"),
+            testdoc.tag("<<")
+        );
+        assert_eq!(
+            Ok((2,())),
+            parse_doc(0)
+        );
+    }
+
+    #[test]
+    fn parser_opt_test1() {
+        let testdoc = Parser{
+            document: "AC".to_string()
+        };
+        let parse_doc = testdoc.tuple3(
+            testdoc.tag("A"),
+            testdoc.opt(testdoc.tag("B")),
+            testdoc.tag("C")
+        );
+        assert_eq!(
+            Ok((2,((),None, ()))),
+            parse_doc(0)
+        );
+    }
+
+    #[test]
+    fn parser_map_test1() {
+        let testdoc = Parser{
+            document: "AAAAB".to_string()
+        };
+        let parse_doc =
+            testdoc.map(testdoc.many0(
+            testdoc.tag("A")
+                ),
+                |result| {
+                    result.len()
+                }
+            );
+        assert_eq!(
+            Ok((4,4)),
+            parse_doc(0)
+        );
+    }
+
+
+    #[test]
+    fn parser_delimited_test1() {
+        let testdoc = Parser{
+            document: "AC".to_string()
+        };
+        let parse_doc = testdoc.delimited(
+            testdoc.tag("A"),
+            testdoc.opt(testdoc.tag("B")),
+            testdoc.tag("C")
+        );
+        assert_eq!(
+            Ok((2,(None))),
+            parse_doc(0)
+        );
+    }
 }
 
