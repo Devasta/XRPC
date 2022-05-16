@@ -440,5 +440,17 @@ mod tests {
         );
     }
 
+    #[test]
+    fn parser_none_of_test2() {
+        let testdoc = Parser{
+            document: "AAAA".to_string()
+        };
+        let parse_doc = testdoc.none_of("ABCD".to_string());
+        assert_eq!(
+            Err(0),
+            parse_doc(0)
+        );
+    }
+
 }
 
