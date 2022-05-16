@@ -16,9 +16,10 @@ delimited -- DONE
 many0 -- DONE
 many1 -- DONE
 map -- DONE
-none_of
+none_of -- DONE
 opt -- DONE
 tag -- DONE
+take_until -- DONE
 take_while_m_n
 tuple -- DONE sort of
 value -- DONE
@@ -207,6 +208,50 @@ impl Parser {
             _ => Err(index)
         }
     }
+
+    pub fn take_until<'a>(&self, substr: String)
+        -> impl Fn(usize) -> ParseResult<String> + '_
+    {
+        move |index| match self.document[index..].find(&substr){
+            None => Err(index),
+            Some(foundindex) => Ok((foundindex, self.document[index..foundindex].to_string()))
+        }
+    }
+
+    pub fn take_while_m_n<'a, F>(&self, mn: usize, mx: usize, pred: F)
+        -> impl Fn(usize) -> ParseResult<String> + 'a
+        where
+            F: Fn(&str) -> bool,
+    {
+        move |mut index| {
+            let mut result = Vec::new();
+
+            let mut resultindex = index;
+            while pred(self.document.get(resultindex..resultindex + 1).unwrap()) {
+                resultindex = resultindex + 1;
+                result.push(self.document.get(resultindex..resultindex+1).unwrap());
+            }
+
+            if result.len() >= mn && result.len() <= mx {
+                Ok((resultindex, result.into_iter().collect()))
+            } else {
+                Err(index)
+            }
+        }
+    }
+
+    /*
+        fn tag<'a>(&self, expected: &'static str)
+       -> impl Fn(usize) -> ParseResult<()> + '_
+    {
+        move |index| match self.document.get(index..index+expected.len()) {
+            Some(next) if next == expected => {
+                Ok((index+expected.len(), ()))
+            }
+            _ => Err(index),
+        }
+    }
+     */
 
     /*
 impl<
@@ -439,6 +484,31 @@ mod tests {
             parse_doc(0)
         );
     }
+
+    #[test]
+    fn parser_take_until_test1() {
+        let testdoc = Parser{
+            document: "ABCD".to_string()
+        };
+        let parse_doc = testdoc.take_until("C".to_string());
+        assert_eq!(
+            Ok((2, "AB".to_string())),
+            parse_doc(0)
+        );
+    }
+
+    #[test]
+    fn parser_take_while_m_n_test1() {
+        let testdoc = Parser{
+            document: "ABCD1234".to_string()
+        };
+        let parse_doc = testdoc.take_while_m_n(1,6,|c: char| c.is_alphabetic());
+        assert_eq!(
+            Ok((3, "ABCD".to_string())),
+            parse_doc(0)
+        );
+    }
+
 
 }
 
