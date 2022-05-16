@@ -11,17 +11,17 @@ struct Element {
 /*
 
 alt -- DONE sort of
-char
-delimited
+char -- Use TAG instead
+delimited -- DONE
 many0 -- DONE
-many1
+many1 -- DONE
 map -- DONE
 none_of
 opt -- DONE
 tag -- DONE
 take_while_m_n
-tuple
-value
+tuple -- DONE sort of
+value -- DONE
 verify
 
  */
@@ -98,6 +98,30 @@ impl Parser {
         }
     }
 
+    fn many1<P, R>(&self, parser: P)
+       -> impl Fn(usize) -> ParseResult<Vec<R>>
+        where
+            P: Fn(usize) -> ParseResult<R>
+    {
+        move |mut index| {
+            let mut result = Vec::new();
+
+            match parser(index) {
+                Err(err) => Err(err),
+                Ok((next_index, next_item)) => {
+                    index = next_index;
+                    result.push(next_item);
+                    while let Ok((next_index, next_item)) = parser(index) {
+                        index = next_index;
+                        result.push(next_item);
+                    }
+                    Ok((index, result))
+                }
+            }
+        }
+    }
+
+
     fn map<P, F, A, B>(&self, parser: P, map_fn: F)
         -> impl Fn(usize) -> ParseResult<B>
         where
@@ -158,6 +182,31 @@ impl Parser {
         }
     }
 
+    fn value<P1, R1, V: Clone>(&self, parser1: P1, val: V)
+       -> impl Fn(usize) -> ParseResult<V>
+        where
+            P1: Fn(usize) -> ParseResult<R1>,
+    {
+        move |index| match parser1(index) {
+            Ok((next_index, result)) => Ok((next_index, val.clone())),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub fn none_of(&self, list: String)
+        -> impl Fn(usize) -> ParseResult<String>
+    {
+        move |index| match self.document.get(index..index+1) {
+            Some(next) => {
+                if list.contains(next){
+                    Err(index)
+                } else {
+                    Ok((index+next.len(), next.to_owned()))
+                }
+            },
+            _ => Err(index)
+        }
+    }
 
     /*
 impl<
@@ -188,7 +237,7 @@ mod tests {
     use crate::Parser;
 
     #[test]
-    fn parser_tag1() {
+    fn parser_tag_test1() {
         let testdoc = Parser{
             document: "<doc>".to_string()
         };
@@ -200,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn parser_tag2() {
+    fn parser_tag_test2() {
         let testdoc = Parser{
             document: "<doc>".to_string()
         };
@@ -273,6 +322,34 @@ mod tests {
     }
 
     #[test]
+    fn parser_many1_test1() {
+        let testdoc = Parser{
+            document: "<<<<>".to_string()
+        };
+        let parse_doc = testdoc.many1(
+            testdoc.tag("<")
+        );
+        assert_eq!(
+            Ok((4,vec![(),(),(),()])),
+            parse_doc(0)
+        );
+    }
+
+    #[test]
+    fn parser_many1_test2() {
+        let testdoc = Parser{
+            document: ">>>>".to_string()
+        };
+        let parse_doc = testdoc.many1(
+            testdoc.tag("<")
+        );
+        assert_eq!(
+            Err(0),
+            parse_doc(0)
+        );
+    }
+
+    #[test]
     fn parser_alt2_test1() {
         let testdoc = Parser{
             document: "<<>".to_string()
@@ -338,5 +415,30 @@ mod tests {
             parse_doc(0)
         );
     }
+
+    #[test]
+    fn parser_value_test1() {
+        let testdoc = Parser{
+            document: "AAA".to_string()
+        };
+        let parse_doc = testdoc.value(testdoc.tag("A"), "B");
+        assert_eq!(
+            Ok((1, "B")),
+            parse_doc(0)
+        );
+    }
+
+    #[test]
+    fn parser_none_of_test1() {
+        let testdoc = Parser{
+            document: "AAAA".to_string()
+        };
+        let parse_doc = testdoc.none_of("BCD");
+        assert_eq!(
+            Ok((1, "A")),
+            parse_doc(0)
+        );
+    }
+
 }
 
