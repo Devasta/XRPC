@@ -162,7 +162,7 @@ impl Parser {
     }
 
     fn delimited<P1, P2, P3, R1, R2, R3>(&self, parser1: P1, parser2: P2, parser3: P3)
-        -> impl Fn(usize) -> ParseResult<(R2)>
+        -> impl Fn(usize) -> ParseResult<R2>
         where
             P1: Fn(usize) -> ParseResult<R1>,
             P2: Fn(usize) -> ParseResult<R2>,
@@ -193,12 +193,12 @@ impl Parser {
         }
     }
 
-    pub fn none_of(&self, list: String)
-        -> impl Fn(usize) -> ParseResult<String>
+    pub fn none_of<'a>(&self, charlist: String)
+        -> impl Fn(usize) -> ParseResult<String> + '_
     {
         move |index| match self.document.get(index..index+1) {
             Some(next) => {
-                if list.contains(next){
+                if charlist.contains(next){
                     Err(index)
                 } else {
                     Ok((index+next.len(), next.to_owned()))
@@ -433,9 +433,9 @@ mod tests {
         let testdoc = Parser{
             document: "AAAA".to_string()
         };
-        let parse_doc = testdoc.none_of("BCD");
+        let parse_doc = testdoc.none_of("BCD".to_string());
         assert_eq!(
-            Ok((1, "A")),
+            Ok((1, "A".to_string())),
             parse_doc(0)
         );
     }
