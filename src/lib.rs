@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 
 type ParseResult<Output> = Result<(usize, Output), usize>;
 
@@ -29,7 +30,8 @@ verify
 
 
 struct Parser {
-    document: String
+    document: String,
+    dtdgenentities: HashMap<&'static str, String>,
 }
 
 impl Parser {
@@ -209,36 +211,34 @@ impl Parser {
         }
     }
 
-    pub fn take_until<'a>(&self, substr: String)
+    pub fn take_until<'a>(&self, substr: &'static str)
         -> impl Fn(usize) -> ParseResult<String> + '_
     {
-        move |index| match self.document[index..].find(&substr){
+        move |index| match self.document[index..].find(substr){
             None => Err(index),
             Some(foundindex) => Ok((foundindex, self.document[index..foundindex].to_string()))
         }
     }
 
-    pub fn take_while_m_n<'a, F>(&self, mn: usize, mx: usize, pred: F)
-        -> impl Fn(usize) -> ParseResult<String> + 'a
-        where
-            F: Fn(&str) -> bool,
+    pub fn entityexpander(&mut self)
+        -> impl FnMut(usize) -> ParseResult<String>
     {
-        move |mut index| {
-            let mut result = Vec::new();
-
-            let mut resultindex = index;
-            while pred(self.document.get(resultindex..resultindex + 1).unwrap()) {
-                resultindex = resultindex + 1;
-                result.push(self.document.get(resultindex..resultindex+1).unwrap());
-            }
-
-            if result.len() >= mn && result.len() <= mx {
-                Ok((resultindex, result.into_iter().collect()))
-            } else {
-                Err(index)
+        move |index| match self.delimited(self.tag("&"),self.take_until(";"),self.tag(";"))(index).clone(){
+            Err(usize) => Err(usize),
+            Ok((newindex, entitykey)) => {
+                match self.dtdgenentities.get(&entitykey as &str){
+                    None => Err(index),
+                    Some(entityval) => {
+                        self.document.replace_range(index..newindex,entityval);
+                        Ok((index, "".parse().unwrap()))
+                    }
+                }
             }
         }
     }
+
+
+
 
     /*
         fn tag<'a>(&self, expected: &'static str)
@@ -279,12 +279,14 @@ impl<
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use crate::Parser;
 
     #[test]
     fn parser_tag_test1() {
         let testdoc = Parser{
-            document: "<doc>".to_string()
+            document: "<doc>".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.tag("<");
         assert_eq!(
@@ -296,7 +298,8 @@ mod tests {
     #[test]
     fn parser_tag_test2() {
         let testdoc = Parser{
-            document: "<doc>".to_string()
+            document: "<doc>".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.tag(">");
         assert_eq!(
@@ -308,7 +311,8 @@ mod tests {
     #[test]
     fn parser_pair1() {
         let testdoc = Parser{
-            document: "<doc>".to_string()
+            document: "<doc>".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.pair(
             testdoc.tag("<"),
@@ -323,7 +327,8 @@ mod tests {
     #[test]
     fn parser_tuple3_test1() {
         let testdoc = Parser{
-            document: "<doc>".to_string()
+            document: "<doc>".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.tuple3(
             testdoc.tag("<"),
@@ -339,7 +344,8 @@ mod tests {
     #[test]
     fn parser_tuple3_test2() {
         let testdoc = Parser{
-            document: "<doc>".to_string()
+            document: "<doc>".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.tuple3(
             testdoc.tag("<"),
@@ -355,7 +361,8 @@ mod tests {
     #[test]
     fn parser_many0_test1() {
         let testdoc = Parser{
-            document: "<<<<>".to_string()
+            document: "<<<<>".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.many0(
             testdoc.tag("<")
@@ -369,7 +376,8 @@ mod tests {
     #[test]
     fn parser_many1_test1() {
         let testdoc = Parser{
-            document: "<<<<>".to_string()
+            document: "<<<<>".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.many1(
             testdoc.tag("<")
@@ -383,7 +391,8 @@ mod tests {
     #[test]
     fn parser_many1_test2() {
         let testdoc = Parser{
-            document: ">>>>".to_string()
+            document: ">>>>".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.many1(
             testdoc.tag("<")
@@ -397,7 +406,8 @@ mod tests {
     #[test]
     fn parser_alt2_test1() {
         let testdoc = Parser{
-            document: "<<>".to_string()
+            document: "<<>".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.alt2(
             testdoc.tag(">"),
@@ -412,7 +422,8 @@ mod tests {
     #[test]
     fn parser_opt_test1() {
         let testdoc = Parser{
-            document: "AC".to_string()
+            document: "AC".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.tuple3(
             testdoc.tag("A"),
@@ -428,7 +439,8 @@ mod tests {
     #[test]
     fn parser_map_test1() {
         let testdoc = Parser{
-            document: "AAAAB".to_string()
+            document: "AAAAB".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc =
             testdoc.map(testdoc.many0(
@@ -448,7 +460,8 @@ mod tests {
     #[test]
     fn parser_delimited_test1() {
         let testdoc = Parser{
-            document: "AC".to_string()
+            document: "AC".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.delimited(
             testdoc.tag("A"),
@@ -464,7 +477,8 @@ mod tests {
     #[test]
     fn parser_value_test1() {
         let testdoc = Parser{
-            document: "AAA".to_string()
+            document: "AAA".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.value(testdoc.tag("A"), "B");
         assert_eq!(
@@ -476,7 +490,8 @@ mod tests {
     #[test]
     fn parser_none_of_test1() {
         let testdoc = Parser{
-            document: "AAAA".to_string()
+            document: "AAAA".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.none_of("BCD".to_string());
         assert_eq!(
@@ -488,7 +503,8 @@ mod tests {
     #[test]
     fn parser_none_of_test2() {
         let testdoc = Parser{
-            document: "AAAA".to_string()
+            document: "AAAA".to_string(),
+            dtdgenentities: Default::default()
         };
         let parse_doc = testdoc.none_of("ABCD".to_string());
         assert_eq!(
@@ -498,25 +514,20 @@ mod tests {
     }
 
     #[test]
-    fn parser_take_until_test1() {
-        let testdoc = Parser{
-            document: "ABCD".to_string()
+    fn parser_entityexpander_test1() {
+        let mut testdoc = Parser{
+            document: "BEFOREENTITY&ENTITY;AFTERENTITYX".to_string(),
+            dtdgenentities: HashMap::from([
+                ("ENTITY", "ENTITYRESULT".to_string())
+            ])
         };
-        let parse_doc = testdoc.take_until("C".to_string());
-        assert_eq!(
-            Ok((2, "AB".to_string())),
-            parse_doc(0)
+        let parse_doc = testdoc.tuple3(
+            testdoc.take_until("&"),
+            testdoc.entityexpander(),
+            testdoc.take_until("X")
         );
-    }
-
-    #[test]
-    fn parser_take_while_m_n_test1() {
-        let testdoc = Parser{
-            document: "ABCD1234".to_string()
-        };
-        let parse_doc = testdoc.take_while_m_n(1,6,|c: char| c.is_alphabetic());
         assert_eq!(
-            Ok((3, "ABCD".to_string())),
+            Ok((2, "X&A;X".to_string())),
             parse_doc(0)
         );
     }
