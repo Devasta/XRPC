@@ -176,7 +176,7 @@ impl Parser {
             => match parser2(index1) {
                 Ok((index2, result2))
                 => match parser3(index2){
-                    Ok((index3, result3))=> Ok((index3, (result2))),
+                    Ok((index3, result3))=> Ok((index3, result2)),
                     Err(err) => Err(err)
                 },
                 Err(err) => Err(err),
@@ -240,7 +240,22 @@ impl Parser {
         }
     }
 
-
+    pub fn entityexpander2(&mut self)
+                          -> impl Fn(usize) -> ParseResult<String> +'_
+    {
+        move |index| {
+            self.map(
+                self.delimited(
+                    self.tag("&"),
+                    self.take_until(";"),
+                    self.tag(";"),
+                ),|(new_index, entitykey)|{
+                    self.document.replace_range(index..new_index, self.dtdgenentities.get(entitykey as &str).unwrap());
+                    ""
+                }
+            )
+        }
+    }
 
     /*
         fn tag<'a>(&self, expected: &'static str)
@@ -602,6 +617,25 @@ mod tests {
     }
 
     */
+
+    #[test]
+    fn parser_entityexpander2_test1() {
+        let mut testdoc = Parser{
+            document: "BEFOREENTITY&ENTITY;AFTERENTITYX".to_string(),
+            dtdgenentities: HashMap::from([
+                ("ENTITY", "ENTITYRESULT".to_string())
+            ])
+        };
+        let parse_doc = testdoc.tuple3(
+            testdoc.take_until("&"),
+            testdoc.entityexpander2(),
+            testdoc.take_until("X")
+        );
+        assert_eq!(
+            Ok((2, "X&A;X".to_string())),
+            parse_doc(0)
+        );
+    }
 
 }
 
