@@ -11,7 +11,7 @@ struct Element {
 
 /*
 
-alt -- DONE sort of
+alt -- DONE sort of, need to make one for each number of values in the tuple, or learn macros.
 char -- Use TAG instead
 delimited -- DONE
 many0 -- DONE
@@ -22,7 +22,7 @@ opt -- DONE
 tag -- DONE
 take_until -- DONE
 take_while_m_n
-tuple -- DONE sort of
+tuple -- DONE sort of, need to make one for each number of values in the tuple, or learn macros.
 value -- DONE
 verify
 
@@ -216,27 +216,29 @@ impl Parser {
     {
         move |index| match self.document[index..].find(substr){
             None => Err(index),
-            Some(foundindex) => Ok((foundindex, self.document[index..foundindex].to_string()))
+            Some(foundindex) => Ok((index + foundindex, self.document[index..index+foundindex].to_string()))
         }
     }
 
     pub fn entityexpander(&mut self)
-        -> impl FnMut(usize) -> ParseResult<String>
+        -> impl FnMut(usize) -> ParseResult<String> +'_
     {
-        move |index| match self.delimited(self.tag("&"),self.take_until(";"),self.tag(";"))(index).clone(){
-            Err(usize) => Err(usize),
-            Ok((newindex, entitykey)) => {
-                match self.dtdgenentities.get(&entitykey as &str){
-                    None => Err(index),
-                    Some(entityval) => {
-                        self.document.replace_range(index..newindex,entityval);
-                        Ok((index, "".parse().unwrap()))
+        move |index| {
+            let e = &self.delimited(self.tag("&"), self.take_until(";"), self.tag(";"))(index).clone();
+            match e {
+                Err(usize) => Err(*usize),
+                Ok((newindex, entitykey)) => {
+                    match self.dtdgenentities.get(entitykey as &str) {
+                        None => Err(index),
+                        Some(entityval) => {
+                            self.document.replace_range(index..*newindex, entityval);
+                            Ok((index, "".parse().unwrap()))
+                        }
                     }
                 }
             }
         }
     }
-
 
 
 
@@ -513,6 +515,73 @@ mod tests {
         );
     }
 
+
+    #[test]
+    fn parser_take_until1() {
+        let mut testdoc = Parser{
+            document: "AXBYCZ".to_string(),
+            dtdgenentities: Default::default()
+        };
+        let parse_doc = testdoc.take_until("Y");
+                   ;
+        assert_eq!(
+            Ok((3, "AXB".to_string())),
+            parse_doc(0)
+        );
+    }
+
+
+
+    #[test]
+    fn parser_map_test2() {
+        let mut testdoc = Parser{
+            document: "AXBYCZ".to_string(),
+            dtdgenentities: Default::default()
+        };
+        let parse_doc =
+                testdoc.map(
+            testdoc.tuple3(
+            testdoc.take_until("X"),
+            testdoc.take_until("Y"),
+            testdoc.take_until("Z")
+        ), |(A, B, C)| {
+                        (A, B, C)
+                    });
+        assert_eq!(
+            Ok((5, ("A".to_string(),"XB".to_string(),"YC".to_string())
+            )),
+            parse_doc(0)
+        );
+    }
+
+
+    #[test]
+    fn parser_map_test3() {
+        let mut testdoc = Parser{
+            document: "BEFOREENTITY&ENTITY;AFTERENTITYX".to_string(),
+            dtdgenentities: HashMap::from([
+                ("ENTITY", "ENTITYRESULT".to_string())
+            ])
+        };
+        let parse_doc =
+            testdoc.map(
+                testdoc.tuple3(
+                    testdoc.take_until("X"),
+                    testdoc.take_until("Y"),
+                    testdoc.take_until("Z")
+                ), |(A, B, C)| {
+                    (A, B, C)
+                });
+        assert_eq!(
+            Ok((5, ("XB".to_string(),"XB".to_string(),"XB".to_string())
+            )),
+            parse_doc(0)
+        );
+    }
+
+
+
+    /*
     #[test]
     fn parser_entityexpander_test1() {
         let mut testdoc = Parser{
@@ -532,6 +601,7 @@ mod tests {
         );
     }
 
+    */
 
 }
 
