@@ -632,7 +632,7 @@ mod tests {
             testdoc.take_until("X")
         );
         assert_eq!(
-            Ok((2, "X&A;X".to_string())),
+            Ok((2, ("A","A","A"))),
             parse_doc(0)
         );
     }
